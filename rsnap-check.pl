@@ -37,6 +37,7 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	# clear variables
 	%INTERVALS = ();
 	%BACKUPFS = ();
+
 	# open config file
 	if (! open CONFIG, "< $CONFIGFILE" ) {
 		print STDERR "Could not open config file $CONFIGFILE: $!\n";
@@ -44,14 +45,17 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	}
 
 	# read config
+	ConfigLine:
 	while (<CONFIG>) {
-		if (! /^#|^$/) {
-			chomp;
-			my @confparam = split /\t+/;
-			if		($confparam[0] eq "include_conf")	{ push @CONFIGFILE, $confparam[1] }
-			elsif	($confparam[0] eq "snapshot_root")	{ $ROOT = $confparam[1] }
-			elsif	($confparam[0] eq "interval")		{ $INTERVALS{$confparam[1]} = $confparam[2] }
-			elsif	($confparam[0] eq "backup")			{ push @{ $BACKUPFS{$confparam[2]} }, $2 if ( $confparam[1] =~ /^([^@]+@[^:]+:)?(.+)$/ ) }
+		my $line = chomp;
+		next ConfigLine if ($line =~ m/^#|\s*^$/);
+
+		my @confparam = split(/\t+/, $line);
+		if		($confparam[0] eq "include_conf")	{ push @CONFIGFILE, $confparam[1] }
+		elsif	($confparam[0] eq "snapshot_root")	{ $ROOT = $confparam[1] }
+		elsif	($confparam[0] eq "interval")		{ $INTERVALS{$confparam[1]} = $confparam[2] }
+		elsif	($confparam[0] eq "backup") {
+			push @{ $BACKUPFS{$confparam[2]} }, $2 if ( $confparam[1] =~ /^([^@]+@[^:]+:)?(.+)$/ );
 		}
 	}
 	# close config file
@@ -81,35 +85,45 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 
 	# check backup directories for each interval
 	my %at_least_one;
+	IntervalName:
 	foreach my $interval ( keys %INTERVALS ) {
+		IntervalNumber:
 		foreach ( 0 .. $INTERVALS{$interval}-1 ) {
-			my $intervaldir = $ROOT . $interval . "." . $_ . "/";
-			if ( -d $intervaldir ) {
-				#check backup points
-				foreach my $bpoint ( keys %BACKUPFS ) {
-					my $failure = 0;
-					my $bpointdir = $intervaldir . $bpoint;
-					if (! -d $bpointdir) {
-						print STDERR "WARNING: Backup point $bpointdir missing!\n";
+			# $intervaldir holds "$ROOT/hourly.0" etc
+			my $intervaldir = sprintf('%s/%s.%s', $ROOT, $interval, $_);
+
+			# Make sure the intervaldir exists; if not then warn and goto next numbered interval
+			unless ( -d $intervaldir ) {
+				print STDERR "WARNING: Backup directory '$intervaldir' not found!\n";
+				$ESTATUS = $WARNING;
+				next IntervalNumber
+			}
+
+			# check backup points inside $intervaldir
+			BackupPoint:
+			foreach my $bpoint ( keys %BACKUPFS ) {
+				my $failure = 0;
+				my $bpointdir = sprintf('%s/%s/', $intervaldir, $bpoint);	# eg $ROOT/hourly.0/host.example.com/
+				unless ( -d $bpointdir ) {
+					print STDERR "WARNING: Backup point $bpointdir missing!\n";
+					$ESTATUS = $WARNING;
+					$failure = 1;
+					next BackupPoint;
+				}
+
+				# for each backup point, check if it is complete
+				BackupSrc:
+				foreach ( @{ $BACKUPFS{$bpoint} } ) {
+					my $src=sprintf(%s/%s, $bpointdir, &strip_leading_slash($_));
+					unless ( -d $src ) {
+						# if not, set warning and exit check for this backup point
+						print STDERR "WARNING: Backup point $bpointdir$_ incomplete!\n";
 						$ESTATUS = $WARNING;
 						$failure = 1;
-						next;
 					}
-					# for each backup point, check if it is complete
-					foreach ( @{ $BACKUPFS{$bpoint} } ) {
-						$_ =~ s/^\/(.*)$/$1/;
-						if (! -d $bpointdir . $_ ) {
-							# if not, set warning and exit check for this backup point
-							print STDERR "WARNING: Backup point $bpointdir$_ incomplete!\n";
-							$ESTATUS = $WARNING;
-							$failure = 1;
-						}
-					}
-					$at_least_one{$interval}{$bpoint} = 1 unless ( $failure );
 				}
-			 } else {
-				print STDERR "WARNING: Backup directory $intervaldir not found!\n";
-				$ESTATUS = $WARNING;
+
+				$at_least_one{$interval}{$bpoint} = 1 unless ( $failure );
 			}
 		}
 	}
@@ -118,7 +132,7 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	foreach my $interval ( keys %INTERVALS ) {
 		foreach my $bpoint ( keys %BACKUPFS ) {
 			unless ( $at_least_one{$interval}{$bpoint} ) {
-				print "No complete $interval backup found for backup point $bpoint!\n";
+				print STDERR sprintf("No complete '%s' backup found for backup point '%s'!\n", $interval, $bpoint);
 				$ESTATUS = $CRITICAL;
 			}
 		}

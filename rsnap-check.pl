@@ -32,27 +32,6 @@ push @CONFIGFILE, $ARGV[0];
 my ( $ROOT, %INTERVALS, %BACKUPFS );
 my $ESTATUS = $OK;
 
-# print read config
-# for debugging purposes
-sub printconf {
-	if ($CONFIGFILE) {
-		print "Config file: $CONFIGFILE\n";
-	} else {
-		print "No config file given!\n";
-		return;
-	}
-	$ROOT ? print "Snapshot root: $ROOT\n" : print "No snapshot root found\n";
-	%INTERVALS ? print "Backup intervals: @{[ %INTERVALS ]}\n" : print "No backup intervals found";
-	if ( %BACKUPFS ) {
-		print "Backup points:\n";
-		foreach my $bpoint ( keys %BACKUPFS) {
-			print "$bpoint: @{ $BACKUPFS{$bpoint} }\n";
-		}
-	} else {
-		print "No backup info found\n";
-	}
-}
-
 # read all config files
 while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	# clear variables
@@ -148,3 +127,33 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 
 ( $ESTATUS != $OK ) ? exit $ESTATUS : print "Backups OK\n";
 exit $OK;
+
+###############################################################################
+## SUBROUTINES
+###############################################################################
+
+# print read config for debugging purposes
+sub printconf {
+	if ($CONFIGFILE) {
+		print "Config file: $CONFIGFILE\n";
+	} else {
+		print "No config file given!\n";
+		return;
+	}
+	$ROOT ? print "Snapshot root: $ROOT\n" : print "No snapshot root found\n";
+	%INTERVALS ? print "Backup intervals: @{[ %INTERVALS ]}\n" : print "No backup intervals found";
+	if ( %BACKUPFS ) {
+		print "Backup points:\n";
+		foreach my $bpoint ( keys %BACKUPFS) {
+			print "$bpoint: @{ $BACKUPFS{$bpoint} }\n";
+		}
+	} else {
+		print "No backup info found\n";
+	}
+}
+
+sub strip_leading_slash {
+	my ($s) = @_;
+	$s =~ s/^\/(.*)$/$1/;
+	return $s
+}

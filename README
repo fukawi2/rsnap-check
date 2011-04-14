@@ -1,0 +1,11 @@
+This is a fork of the script created by Till Elsner (till.elsner@henkel.com) to
+monitor rsnapshot backups. I found various issues with the original script so
+am forking it to fix these issues.
+
+Main issues found with original script:
+   * Script will report error state until EVERY backup interval has been
+     completed. This could take over a year depending how many weekly or
+	 monthly intervals you keep.
+   * If a complete backup is missing (eg, hourly.5/host.example.com/) the
+     script reports an error for EVERY expected backup location under this
+	 parent path. Makes for a lot of unnecessary noise.

@@ -114,7 +114,7 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 				# for each backup point, check if it is complete
 				BackupSrc:
 				foreach ( @{ $BACKUPFS{$bpoint} } ) {
-					my $src=sprintf(%s/%s, $bpointdir, &strip_leading_slash($_));
+					my $src=sprintf('%s/%s', $bpointdir, &strip_leading_slash($_));
 					unless ( -d $src ) {
 						# if not, set warning and exit check for this backup point
 						print STDERR "WARNING: Backup point $bpointdir$_ incomplete!\n";

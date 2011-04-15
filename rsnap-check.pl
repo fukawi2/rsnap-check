@@ -43,12 +43,13 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 		print STDERR "Could not open config file $CONFIGFILE: $!\n";
 		exit $UNKNOWN;
 	}
+	my @config_file = <CONFIG>;
+	close CONFIG;
+	chomp(@config_file);
 
 	# read config
 	ConfigLine:
-	while (<CONFIG>) {
-		chomp;
-		my $line = $_;
+	foreach my $line (@config_file) {
 		next ConfigLine if ($line =~ m/^#|\s*^$/);
 
 		my @confparam = split(/\t+/, $line);
@@ -59,8 +60,6 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 			push @{ $BACKUPFS{$confparam[2]} }, $2 if ( $confparam[1] =~ /^([^@]+@[^:]+:)?(.+)$/ );
 		}
 	}
-	# close config file
-	close CONFIG;
 
 	# check if snapshot root is defined
 	unless ( $ROOT ) {

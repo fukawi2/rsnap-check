@@ -47,7 +47,8 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	# read config
 	ConfigLine:
 	while (<CONFIG>) {
-		my $line = chomp;
+		chomp;
+		my $line = $_;
 		next ConfigLine if ($line =~ m/^#|\s*^$/);
 
 		my @confparam = split(/\t+/, $line);

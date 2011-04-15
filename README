@@ -9,3 +9,4 @@ Main issues found with original script:
    * If a complete backup is missing (eg, hourly.5/host.example.com/) the
      script reports an error for EVERY expected backup location under this
 	 parent path. Makes for a lot of unnecessary noise.
+   * Recursive parsing of "include_conf" was borked.

@@ -57,7 +57,9 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 		elsif	($confparam[0] eq "snapshot_root")	{ $ROOT = $confparam[1] }
 		elsif	($confparam[0] eq "interval")		{ $INTERVALS{$confparam[1]} = $confparam[2] }
 		elsif	($confparam[0] eq "backup") {
-			push @{ $BACKUPFS{$confparam[2]} }, $2 if ( $confparam[1] =~ /^([^@]+@[^:]+:)?(.+)$/ );
+			if ( $confparam[1] =~ m/^([^@]+@[^:]+:)?\/?(.+)$/ ) {
+				push(@{ $BACKUPFS{$confparam[2]} }, $2);
+			}
 		}
 	}
 
@@ -90,7 +92,7 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 		IntervalNumber:
 		foreach ( 0 .. $INTERVALS{$interval}-1 ) {
 			# $intervaldir holds "$ROOT/hourly.0" etc
-			my $intervaldir = sprintf('%s/%s.%s', $ROOT, $interval, $_);
+			my $intervaldir = sprintf('%s%s.%s', $ROOT, $interval, $_);
 
 			# Make sure the intervaldir exists; if not then warn and goto next numbered interval
 			unless ( -d $intervaldir ) {
@@ -118,7 +120,7 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 				foreach ( @{ $BACKUPFS{$bpoint} } ) {
 					# This block checks for lowest-level backup destinations
 					#   eg. $ROOT/hourly.0/host.example.com/home/username/Maildir/
-					my $src = $bpointdir.&strip_leading_slash($_);
+					my $src = $bpointdir.$_;
 					unless ( -d $src ) {
 						# if not, set warning and exit check for this backup point
 						print STDERR 'WARNING: Backup point '.$src." incomplete!\n";
@@ -168,10 +170,4 @@ sub printconf {
 	} else {
 		print "No backup info found\n";
 	}
-}
-
-sub strip_leading_slash {
-	my ($s) = @_;
-	$s =~ s/^\/(.*)$/$1/;
-	return $s
 }

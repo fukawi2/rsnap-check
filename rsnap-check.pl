@@ -103,7 +103,9 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 			BackupPoint:
 			foreach my $bpoint ( keys %BACKUPFS ) {
 				my $failure = 0;
-				my $bpointdir = sprintf('%s/%s/', $intervaldir, $bpoint);	# eg $ROOT/hourly.0/host.example.com/
+				# This block checks for mid-level backup destinations
+				#   eg. $ROOT/hourly.0/host.example.com/
+				my $bpointdir = sprintf('%s/%s', $intervaldir, $bpoint);
 				unless ( -d $bpointdir ) {
 					print STDERR "WARNING: Backup point $bpointdir missing!\n";
 					$ESTATUS = $WARNING;
@@ -114,10 +116,12 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 				# for each backup point, check if it is complete
 				BackupSrc:
 				foreach ( @{ $BACKUPFS{$bpoint} } ) {
+					# This block checks for lowest-level backup destinations
+					#   eg. $ROOT/hourly.0/host.example.com/home/username/Maildir/
 					my $src=sprintf('%s/%s', $bpointdir, &strip_leading_slash($_));
 					unless ( -d $src ) {
 						# if not, set warning and exit check for this backup point
-						print STDERR "WARNING: Backup point $bpointdir$_ incomplete!\n";
+						print STDERR 'WARNING: Backup point '.$bpointdir.$src." incomplete!\n";
 						$ESTATUS = $WARNING;
 						$failure = 1;
 					}

@@ -118,10 +118,10 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 				foreach ( @{ $BACKUPFS{$bpoint} } ) {
 					# This block checks for lowest-level backup destinations
 					#   eg. $ROOT/hourly.0/host.example.com/home/username/Maildir/
-					my $src=sprintf('%s/%s', $bpointdir, &strip_leading_slash($_));
+					my $src = $bpointdir.&strip_leading_slash($_);
 					unless ( -d $src ) {
 						# if not, set warning and exit check for this backup point
-						print STDERR 'WARNING: Backup point '.$bpointdir.$src." incomplete!\n";
+						print STDERR 'WARNING: Backup point '.$src." incomplete!\n";
 						$ESTATUS = $WARNING;
 						$failure = 1;
 					}

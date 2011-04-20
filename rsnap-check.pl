@@ -29,14 +29,14 @@ if ( $ARGV[0] eq "-h" ) {
 my ( @CONFIGFILE, $CONFIGFILE);
 push @CONFIGFILE, $ARGV[0];
 
-my ( $ROOT, %INTERVALS, %BACKUPFS );
+my ( $ROOT, %INTERVALS, %backup_destinations );
 my $ESTATUS = $OK;
 
 # read all config files
 while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	# clear variables
 	%INTERVALS = ();
-	%BACKUPFS = ();
+	%backup_destinations = ();
 
 	# open config file
 	if (! open CONFIG, "< $CONFIGFILE" ) {
@@ -54,11 +54,18 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 
 		my @confparam = split(/\t+/, $line);
 		if		($confparam[0] eq "include_conf")	{ push @CONFIGFILE, $confparam[1] }
-		elsif	($confparam[0] eq "snapshot_root")	{ $ROOT = $confparam[1] }
+		elsif	($confparam[0] eq "snapshot_root")	{ $ROOT = &unslash_path($confparam[1]) }
 		elsif	($confparam[0] eq "interval")		{ $INTERVALS{$confparam[1]} = $confparam[2] }
 		elsif	($confparam[0] eq "backup") {
-			if ( $confparam[1] =~ m/^([^@]+@[^:]+:)?\/?(.+)$/ ) {
-				push(@{ $BACKUPFS{$confparam[2]} }, $2);
+			#   0		  1								  2
+			# backup	/mnt/natorgsvr/d/				natorgsvr.natorg.local/d/
+			# backup	/mnt/warehousemgr-pc/c/VCSystem	warehousemgr-pc.natorg.local/VCSystem
+			my $backup_src = &unslash_path($confparam[1]);
+			my $backup_dst = &unslash_path($confparam[2]);
+			if ( $backup_src =~ m/^([^@]+@[^:]+:)?\/?(.+)$/ ) {
+				$backup_src = $2;
+				&dbg(sprintf('Found backup source: %s ==> %s', $backup_src, $backup_dst));
+				push(@{$backup_destinations{$backup_dst}}, $backup_src);
 			}
 		}
 	}
@@ -74,79 +81,75 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 		exit $CRITICAL;
 	}
 	# check if backup point are defined
-	unless ( %BACKUPFS ) {
+	unless ( %backup_destinations ) {
 		print STDERR "No backup point defined!\n";
 		exit $CRITICAL;
 	}
-
 	# check if backup root exists
 	unless ( -d $ROOT ) {
 		print STDERR "Backup root $ROOT does not exist!\n";
 		exit $CRITICAL;
 	}
 
-	# check backup directories for each interval
-	my %at_least_one;
-	IntervalName:
-	foreach my $interval ( keys %INTERVALS ) {
-		IntervalNumber:
-		foreach ( 0 .. $INTERVALS{$interval}-1 ) {
-			# $intervaldir holds "$ROOT/hourly.0" etc
-			my $intervaldir = sprintf('%s%s.%s', $ROOT, $interval, $_);
+	# Debug Output
+	&dbg('Backup ROOT is: '.$ROOT);
 
-			# Make sure the intervaldir exists; if not then warn and goto next numbered interval
-			unless ( -d $intervaldir ) {
-				print STDERR "WARNING: Backup directory '$intervaldir' not found!\n";
+	my %at_least_one;
+	# Start from the top and work down....
+	# FIRST: Each interval (eg, hourly, daily, weekly etc)
+	Interval:
+	foreach my $interval ( keys %INTERVALS ) {
+		# SECOND: aged intervals (eg, xxx.0, xxx.1, xxx.2 etc)
+		IntervalAge:
+		foreach my $age ( 0 .. $INTERVALS{$interval}-1 ) {
+			# Make sure this aged interval exists before digging deeper
+			my $aged_interval = sprintf('%s.%s', $interval, $age);
+			unless ( -d "$ROOT/$aged_interval" ) {
+				print STDERR sprintf("WARNING: Missing aged interval: %s\n", $aged_interval);
 				$ESTATUS = $WARNING;
-				next IntervalNumber
+				next IntervalAge;
 			}
 
-			# check backup points inside $intervaldir
-			BackupPoint:
-			foreach my $bpoint ( keys %BACKUPFS ) {
-				my $failure = 0;
-				# This block checks for mid-level backup destinations
-				#   eg. $ROOT/hourly.0/host.example.com/
-				my $bpointdir = sprintf('%s/%s', $intervaldir, $bpoint);
-				unless ( -d $bpointdir ) {
-					print STDERR "WARNING: Backup point $bpointdir missing!\n";
+			# THIRD: does this interval age contain all the expected destinations?
+			BackupDst:
+			foreach my $expected_dst ( keys %backup_destinations ) {
+				my $dst_path = sprintf('%s/%s', $aged_interval, $expected_dst);
+				unless ( -d "$ROOT/$dst_path") {
+					print STDERR sprintf("WARNING: Expected destination missing: %s\n", $dst_path);
 					$ESTATUS = $WARNING;
-					$failure = 1;
-					next BackupPoint;
+					next BackupDst;
 				}
 
-				# for each backup point, check if it is complete
+				# FORTH: check if this backup destination contains all expect sources
 				BackupSrc:
-				foreach ( @{ $BACKUPFS{$bpoint} } ) {
-					# This block checks for lowest-level backup destinations
-					#   eg. $ROOT/hourly.0/host.example.com/home/username/Maildir/
-					my $src = $bpointdir.$_;
-					unless ( -d $src ) {
-						# if not, set warning and exit check for this backup point
-						print STDERR 'WARNING: Backup point '.$src." incomplete!\n";
+				foreach my $expected_src ( @{ $backup_destinations{$expected_dst} } ) {
+					my $src_path = sprintf('%s/%s', $dst_path, $expected_src);
+					unless ( -d "$ROOT/$src_path" ) {
+						print STDERR sprintf("WARNING: Expected source missing: %s\n", $src_path);
 						$ESTATUS = $WARNING;
-						$failure = 1;
+						next BackupSrc;
 					}
+					# If we get here, then we have passed all the tests; Assume this is
+					# a complete backup of the expected $ROOT/*/dst/src/
+					$at_least_one{$expected_src} = 1;
 				}
-
-				$at_least_one{$interval}{$bpoint} = 1 unless ( $failure );
 			}
 		}
 	}
-
-	# check if at least one complete backup exists per interval and mount point
-	foreach my $interval ( keys %INTERVALS ) {
-		foreach my $bpoint ( keys %BACKUPFS ) {
-			unless ( $at_least_one{$interval}{$bpoint} ) {
-				print STDERR sprintf("No complete '%s' backup found for backup point '%s'!\n", $interval, $bpoint);
+	# check if at least one complete backup exists of every expected backup
+	foreach my $expected_dst ( keys %backup_destinations ) {
+		foreach my $expected_src ( @{ $backup_destinations{$expected_dst} } ) {
+			unless ($at_least_one{$expected_src}) {
+				print STDERR sprintf("[E] No complete backup found for: %s\n", $expected_src);
 				$ESTATUS = $CRITICAL;
 			}
 		}
 	}
 }
 
-( $ESTATUS != $OK ) ? exit $ESTATUS : print "Backups OK\n";
-exit $OK;
+# Everything is good :D
+print "Backups OK\n" if ($ESTATUS == $OK);
+exit $ESTATUS;
 
 ###############################################################################
 ## SUBROUTINES
@@ -162,12 +165,26 @@ sub printconf {
 	}
 	$ROOT ? print "Snapshot root: $ROOT\n" : print "No snapshot root found\n";
 	%INTERVALS ? print "Backup intervals: @{[ %INTERVALS ]}\n" : print "No backup intervals found";
-	if ( %BACKUPFS ) {
+	if ( %backup_destinations ) {
 		print "Backup points:\n";
-		foreach my $bpoint ( keys %BACKUPFS) {
-			print "$bpoint: @{ $BACKUPFS{$bpoint} }\n";
+		foreach my $bpoint ( keys %backup_destinations) {
+			print "$bpoint: @{ $backup_destinations{$bpoint} }\n";
 		}
 	} else {
 		print "No backup info found\n";
 	}
+}
+
+sub unslash_path {
+	# Remove trailing slash from a path
+	my ($path) = @_;
+	$path =~ s/\/+\z//;
+	return $path;
+}
+
+sub dbg {
+	# Debug Helper
+	return $OK;
+	my ($msg) = @_; $msg = 'Unspecified Error' unless $msg;
+	print "DEBUG: $msg\n";
 }

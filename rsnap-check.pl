@@ -100,15 +100,25 @@ while ( $CONFIGFILE = shift @CONFIGFILE ) {
 	Interval:
 	foreach my $interval ( keys %INTERVALS ) {
 		# SECOND: aged intervals (eg, xxx.0, xxx.1, xxx.2 etc)
+		# Note: We do this in reverse (ie .5 -> .4 -> .3 -> .2 -> .1 -> .0) to
+		#       avoiding warning on intervals that we haven't reached yet. For
+		#       example, monthly.5 to monthly.11 when rsnapshot has only been
+		#       in place for 6 months.
 		IntervalAge:
-		foreach my $age ( 0 .. $INTERVALS{$interval}-1 ) {
+		foreach my $age ( reverse(0..$INTERVALS{$interval}-1)) {
+			my %oldest_interval;
 			# Make sure this aged interval exists before digging deeper
 			my $aged_interval = sprintf('%s.%s', $interval, $age);
 			unless ( -d "$ROOT/$aged_interval" ) {
-				print STDERR sprintf("WARNING: Missing aged interval: %s\n", $aged_interval);
-				$ESTATUS = $WARNING;
+				if ( $oldest_interval{$interval} ) {
+					&dbg('   ... but highest interval already found: '.$oldest_interval{$interval});
+					print STDERR sprintf("WARNING: Missing aged interval: %s\n", $aged_interval);
+					$ESTATUS = $WARNING;
+				}
 				next IntervalAge;
 			}
+			# We only get here if there is an "xxx.$age" path existing.
+			$oldest_interval{$interval} = $age;
 
 			# THIRD: does this interval age contain all the expected destinations?
 			BackupDst:
